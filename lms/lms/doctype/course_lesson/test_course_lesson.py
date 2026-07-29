@@ -201,8 +201,29 @@ class TestApplyEnforcementFlagsEdgeCases(unittest.TestCase):
 		)
 		self.assertEqual(
 			self.fn(assignment_done=False, quiz_done=True, settings=settings),
-			(True, False),
+				(True, False),
+			)
+
+
+class TestRequiresExplicitConfirmation(unittest.TestCase):
+	def setUp(self):
+		from lms.lms.doctype.course_lesson.course_lesson import (
+			requires_explicit_confirmation,
 		)
+
+		self.fn = requires_explicit_confirmation
+
+	def test_confirm_mode_rejects_automatic_attempt(self):
+		self.assertTrue(self.fn("Confirm and Continue", False))
+		self.assertTrue(self.fn("Confirm and Continue", 0))
+
+	def test_confirm_mode_accepts_explicit_attempt(self):
+		self.assertFalse(self.fn("Confirm and Continue", True))
+		self.assertFalse(self.fn("Confirm and Continue", 1))
+
+	def test_automatic_mode_never_requires_confirmation(self):
+		self.assertFalse(self.fn("Automatic", False))
+		self.assertFalse(self.fn(None, False))
 
 
 class TestServePrivateFileVersionSafe(unittest.TestCase):

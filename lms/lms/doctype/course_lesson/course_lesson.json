@@ -10,6 +10,7 @@
  "field_order": [
   "title",
   "include_in_preview",
+  "completion_mode",
   "is_scorm_package",
   "column_break_4",
   "chapter",
@@ -46,6 +47,14 @@
    "fieldname": "include_in_preview",
    "fieldtype": "Check",
    "label": "Include In Preview"
+  },
+  {
+   "default": "Automatic",
+   "description": "Choose whether the lesson completes automatically or only after the learner confirms it.",
+   "fieldname": "completion_mode",
+   "fieldtype": "Select",
+   "label": "Completion Method",
+   "options": "Automatic\nConfirm and Continue"
   },
   {
    "fieldname": "column_break_4",

@@ -3,13 +3,23 @@
  * be unit-tested without mounting Lesson.vue or stubbing the Pinia store.
  */
 
-export function resolveDwellSeconds(raw: unknown, fallback = 30): number | null {
+export function resolveDwellSeconds(
+	raw: unknown,
+	fallback = 30,
+): number | null {
 	const n = Number(raw ?? fallback)
 	if (!Number.isFinite(n) || n <= 0) return null
 	return n
 }
 
-export function isVideoComplete(currentTime: number, duration: number): boolean {
+export function isConfirmAndContinueMode(mode: unknown): boolean {
+	return mode === 'Confirm and Continue'
+}
+
+export function isVideoComplete(
+	currentTime: number,
+	duration: number,
+): boolean {
 	if (!Number.isFinite(currentTime) || !Number.isFinite(duration)) return false
 	if (duration <= 0) return false
 	return currentTime >= duration - 1

@@ -34,7 +34,7 @@
 					<div class="mt-1 mb-4 text-ink-gray-7">
 						{{
 							__(
-								'This lesson is not available for preview. Please enroll in the course to access it.'
+								'This lesson is not available for preview. Please enroll in the course to access it.',
 							)
 						}}
 					</div>
@@ -138,7 +138,11 @@
 									</template>
 									<span>{{ __('Previous') }}</span>
 								</Button>
-								<Button v-if="lesson.data.next" @click="switchLesson('next')">
+								<Button
+									v-if="lesson.data.next"
+									:disabled="confirmationRequired"
+									@click="switchLesson('next')"
+								>
 									<template #suffix>
 										<span class="lucide-chevron-right size-4" />
 									</template>
@@ -176,7 +180,11 @@
 									</span>
 								</Button>
 
-								<Button v-if="lesson.data.next" @click="switchLesson('next')">
+								<Button
+									v-if="lesson.data.next"
+									:disabled="confirmationRequired"
+									@click="switchLesson('next')"
+								>
 									<template #suffix>
 										<span class="lucide-chevron-right size-4" />
 									</template>
@@ -258,6 +266,21 @@
 								:youtube="lesson.data.youtube"
 								:quizId="lesson.data.quiz_id"
 							/>
+						</div>
+						<div
+							v-if="confirmationRequired && !embedded"
+							class="mt-10 flex justify-end border-t border-outline-gray-2 pt-5"
+						>
+							<Button
+								variant="solid"
+								:loading="progress.loading"
+								@click="confirmAndContinue"
+							>
+								<template #prefix>
+									<span class="lucide-circle-check size-4" />
+								</template>
+								{{ __('Confirm and Continue') }}
+							</Button>
 						</div>
 					</div>
 					<div
@@ -353,6 +376,7 @@ import {
 	isVideoComplete,
 	shouldStartDwellTimer,
 	shouldAttachVideoFallback,
+	isConfirmAndContinueMode,
 } from '@/utils/lessonProgress'
 import EditorJS from '@editorjs/editorjs'
 import LessonContent from '@/components/LessonContent.vue'
@@ -488,6 +512,13 @@ const lesson = createResource({
 	auto: true,
 })
 
+const confirmationRequired = computed(
+	() =>
+		isConfirmAndContinueMode(lesson.data?.completion_mode) &&
+		Boolean(lesson.data?.membership) &&
+		!lesson.data?.progress,
+)
+
 const setupLesson = (data) => {
 	if (Object.keys(data).length === 0) {
 		router.push({
@@ -513,7 +544,7 @@ const setupLesson = (data) => {
 	)
 		instructorEditor.value = renderEditor(
 			'instructor-content',
-			data.instructor_content
+			data.instructor_content,
 		)
 	editor.value?.isReady.then(() => {
 		checkIfDiscussionsAllowed()
@@ -555,6 +586,7 @@ const renderEditor = (holder, content) => {
 let progressSubmitting = false
 const markProgress = () => {
 	if (progressSubmitting) return
+	if (isConfirmAndContinueMode(lesson.data?.completion_mode)) return
 	// Only enrolled students record progress; a moderator previewing has no
 	// membership row so save_progress would no-op server-side but still
 	// flip the in-memory `completedLesson` and show a green tick that
@@ -577,16 +609,17 @@ const markProgress = () => {
 				progressSubmitting = false
 				console.error(err)
 			},
-		}
+		},
 	)
 }
 
 const progress = createResource({
 	url: 'lms.lms.doctype.course_lesson.course_lesson.save_progress',
-	makeParams() {
+	makeParams(params = {}) {
 		return {
 			lesson: lesson.data.name,
 			course: props.courseName,
+			confirmed: params.confirmed ? 1 : 0,
 		}
 	},
 	onSuccess(data) {
@@ -600,6 +633,22 @@ const progress = createResource({
 		emit('progress-updated', data)
 	},
 })
+
+const confirmAndContinue = () => {
+	if (!confirmationRequired.value || progress.loading) return
+	progress.submit(
+		{ confirmed: true },
+		{
+			onSuccess() {
+				lesson.data.progress = true
+				if (lesson.data.next) switchLesson('next')
+			},
+			onError(err) {
+				console.error(err)
+			},
+		},
+	)
+}
 
 const notes = createListResource({
 	doctype: 'LMS Lesson Note',
@@ -639,6 +688,7 @@ const breadcrumbs = computed(() => {
 })
 
 const switchLesson = (direction) => {
+	if (direction === 'next' && confirmationRequired.value) return
 	trackVideoWatchDuration()
 	let lessonIndex =
 		direction === 'prev'
@@ -667,7 +717,7 @@ watch(
 	[() => route.params.chapterNumber, () => route.params.lessonNumber],
 	async (
 		[newChapterNumber, newLessonNumber],
-		[oldChapterNumber, oldLessonNumber]
+		[oldChapterNumber, oldLessonNumber],
 	) => {
 		if (newChapterNumber || newLessonNumber) {
 			plyrSources.value = []
@@ -677,7 +727,7 @@ watch(
 			checkIfDiscussionsAllowed()
 			checkQuiz()
 		}
-	}
+	},
 )
 
 const resetLessonState = (newChapterNumber, newLessonNumber) => {
@@ -758,7 +808,7 @@ watch(
 		const hasVideoListener =
 			plyrSources.value.length > 0 || !!document.querySelector('video')
 		const enforceVideo = Number(
-			settingsStore.settings?.data?.enforce_video_completion ?? 0
+			settingsStore.settings?.data?.enforce_video_completion ?? 0,
 		)
 		// When the lesson has video AND enforcement is on, suppress dwell so
 		// completion is gated on play-to-end. When enforcement is off, dwell
@@ -781,11 +831,11 @@ watch(
 						if (gen !== fallbackGeneration) return
 						fallbackToDwellTimer('html5-video-error')
 					},
-					{ once: true }
+					{ once: true },
 				)
 			})
 		}
-	}
+	},
 )
 
 const getPlyrSource = async () => {
@@ -793,7 +843,7 @@ const getPlyrSource = async () => {
 	if (plyrSources.value.length == 0) {
 		plyrSources.value = await enablePlyr()
 		const enforceVideo = Number(
-			settingsStore.settings?.data?.enforce_video_completion ?? 0
+			settingsStore.settings?.data?.enforce_video_completion ?? 0,
 		)
 		if (
 			shouldAttachVideoFallback({
@@ -810,7 +860,7 @@ const getPlyrSource = async () => {
 				player.on('error', (event) => {
 					if (gen !== fallbackGeneration) return
 					fallbackToDwellTimer(
-						'plyr-error: ' + (event?.detail?.message || 'unknown')
+						'plyr-error: ' + (event?.detail?.message || 'unknown'),
 					)
 				})
 				setTimeout(() => {
@@ -906,8 +956,8 @@ const fallbackToDwellTimer = (reason) => {
 	console.warn('[Lesson] video fallback engaged:', reason)
 	toast.warning(
 		__(
-			'Video failed to load — this lesson will still be marked complete after you spend some time on it.'
-		)
+			'Video failed to load — this lesson will still be marked complete after you spend some time on it.',
+		),
 	)
 	clearInterval(timerInterval)
 	timer.value = 0
@@ -916,8 +966,9 @@ const fallbackToDwellTimer = (reason) => {
 
 const startTimer = () => {
 	if (!lesson.data?.membership) return
+	if (isConfirmAndContinueMode(lesson.data?.completion_mode)) return
 	const dwell = resolveDwellSeconds(
-		settingsStore.settings?.data?.lesson_dwell_time
+		settingsStore.settings?.data?.lesson_dwell_time,
 	)
 	if (dwell === null) return
 	timerInterval = setInterval(() => {
@@ -999,7 +1050,7 @@ const enrollStudent = () => {
 				toast.error(__(err.messages?.[0] || err))
 				console.error(err)
 			},
-		}
+		},
 	)
 }
 
@@ -1094,7 +1145,7 @@ watch(allowDiscussions, () => {
 
 const redirectToLogin = () => {
 	window.location.href = `/login?redirect-to=${getLmsRoute(
-		`courses/${props.courseName}`
+		`courses/${props.courseName}`,
 	)}`
 }
 

@@ -10,7 +10,7 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.query_builder.functions import Locate
 from frappe.realtime import get_website_room
-from frappe.utils import add_to_date, now_datetime
+from frappe.utils import add_to_date, cint, now_datetime
 from frappe.utils.response import send_private_file
 from frappe.utils.telemetry import capture
 
@@ -254,8 +254,13 @@ def apply_enforcement_flags(quiz_done: bool, assignment_done: bool, settings: di
 	)
 
 
+def requires_explicit_confirmation(completion_mode: str, confirmed=False) -> bool:
+	"""Return whether an explicit-confirmation lesson must reject this attempt."""
+	return completion_mode == "Confirm and Continue" and not cint(confirmed)
+
+
 @frappe.whitelist()
-def save_progress(lesson: str, course: str, scorm_details: dict = None):
+def save_progress(lesson: str, course: str, scorm_details: dict = None, confirmed=False):
 	"""
 	Note: Pass the argument scorm_details as a dict if it is SCORM related save_progress
 	"""
@@ -263,13 +268,17 @@ def save_progress(lesson: str, course: str, scorm_details: dict = None):
 	# recalculates progress, then this advances current_lesson. Batch them so the
 	# request emits a single on_update, as the pre-regression .save() did.
 	with batched_enrollment_updates():
-		return _save_progress(lesson, course, scorm_details)
+		return _save_progress(lesson, course, scorm_details, confirmed)
 
 
-def _save_progress(lesson: str, course: str, scorm_details: dict = None):
+def _save_progress(lesson: str, course: str, scorm_details: dict = None, confirmed=False):
 	membership = frappe.db.exists("LMS Enrollment", {"course": course, "member": frappe.session.user})
 	if not membership:
 		return 0
+
+	completion_mode = frappe.db.get_value("Course Lesson", lesson, "completion_mode")
+	if requires_explicit_confirmation(completion_mode, confirmed):
+		return get_course_progress(course)
 
 	progress_already_exists = frappe.db.exists(
 		"LMS Course Progress", {"lesson": lesson, "member": frappe.session.user}

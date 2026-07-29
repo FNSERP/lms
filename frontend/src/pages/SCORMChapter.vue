@@ -3,6 +3,19 @@
 		class="sticky top-0 z-10 flex items-center justify-between border-b bg-surface-base px-3 py-2.5 sm:px-5"
 	>
 		<Breadcrumbs class="h-7" :items="breadcrumbs" />
+		<Button
+			v-if="nextLesson"
+			:disabled="!completionSaved"
+			@click="goToNextLesson"
+		>
+			{{ __('Next') }}
+			<template #suffix>
+				<span class="lucide-chevron-right size-4" />
+			</template>
+		</Button>
+		<Button v-else-if="completionSaved" @click="goToCourse">
+			{{ __('Back to Course') }}
+		</Button>
 	</header>
 	<div
 		v-if="
@@ -24,7 +37,7 @@
 				<div class="mb-4">
 					{{
 						__(
-							'You are not enrolled in this course. Please enroll to access this lesson.'
+							'You are not enrolled in this course. Please enroll to access this lesson.',
 						)
 					}}
 				</div>
@@ -43,17 +56,22 @@ import {
 	createDocumentResource,
 	createListResource,
 	createResource,
+	toast,
 	usePageMeta,
 } from 'frappe-ui'
 import { computed, inject, onBeforeMount, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { useSidebar } from '@/stores/sidebar'
+import { isScormCompletionSignal } from '@/utils/scorm'
 import { sessionStore } from '../stores/session'
 
 const { brand } = sessionStore()
 const sidebarStore = useSidebar()
+const router = useRouter()
 const user = inject('$user')
 const readyToRender = ref(false)
 const isSuccessfullyCompleted = ref(false)
+const completionSaved = ref(false)
 
 // If courseRestartOnFailure is true, student has to restart the whole course if failed.
 // Otherwise, student could retake the final quiz portion.
@@ -97,6 +115,29 @@ const enrollment = createListResource({
 	cache: ['enrollments', props.courseName, user.data?.name],
 })
 
+const outline = createResource({
+	url: 'lms.lms.utils.get_course_outline',
+	params: {
+		course: props.courseName,
+		progress: false,
+	},
+	auto: true,
+})
+
+const currentLessonName = computed(() => chapter.doc?.lessons?.[0]?.lesson)
+const nextLesson = computed(() => {
+	const lessons = (outline.data || []).flatMap((outlineChapter) =>
+		(outlineChapter.lessons || []).map((lesson) => ({
+			chapter: outlineChapter,
+			lesson,
+		})),
+	)
+	const currentIndex = lessons.findIndex(
+		(item) => item.lesson.name === currentLessonName.value,
+	)
+	return currentIndex >= 0 ? lessons[currentIndex + 1] || null : null
+})
+
 const getDataFromLMS = (key) => {
 	if (key === 'cmi.core.lesson_status') {
 		return progress.data?.status === 'Complete' ? 'passed' : 'incomplete'
@@ -118,23 +159,17 @@ const debouncedSaveProgress = (scormDetails) => {
 }
 
 const saveDataToLMS = (key, value) => {
-	const isLessonStatus = key === 'cmi.core.lesson_status' && value === 'passed'
-	const isCompletionStatus =
-		key === 'cmi.completion_status' && value === 'completed'
+	const isCompletionStatus = isScormCompletionSignal(key, value)
 	const shouldRestart =
 		(key === 'cmi.core.lesson_status' && value === 'failed') ||
 		(key === 'cmi.completion_status' && value === 'incomplete')
 
-	if (isLessonStatus || isCompletionStatus) {
+	if (isCompletionStatus) {
 		if (isSuccessfullyCompleted.value) return
 		isSuccessfullyCompleted.value = true
 	}
 
-	if (
-		isLessonStatus ||
-		isCompletionStatus ||
-		(shouldRestart && courseRestartOnFailure)
-	) {
+	if (isCompletionStatus || (shouldRestart && courseRestartOnFailure)) {
 		saveProgress({
 			is_complete: isSuccessfullyCompleted.value,
 			scorm_content: '',
@@ -150,12 +185,22 @@ const saveDataToLMS = (key, value) => {
 	}
 }
 
-const saveProgress = (scormDetails = null) => {
-	call('lms.lms.doctype.course_lesson.course_lesson.save_progress', {
-		lesson: chapter.doc.lessons[0].lesson,
-		course: props.courseName,
-		scorm_details: scormDetails,
-	})
+const saveProgress = async (scormDetails = null) => {
+	try {
+		await call('lms.lms.doctype.course_lesson.course_lesson.save_progress', {
+			lesson: chapter.doc.lessons[0].lesson,
+			course: props.courseName,
+			scorm_details: scormDetails,
+		})
+		if (scormDetails?.is_complete) completionSaved.value = true
+	} catch (error) {
+		console.error(error)
+		if (scormDetails?.is_complete) {
+			isSuccessfullyCompleted.value = false
+			completionSaved.value = false
+			toast.error(__('Unable to save lesson completion. Please try again.'))
+		}
+	}
 }
 
 const progress = createResource({
@@ -173,9 +218,40 @@ const progress = createResource({
 		}
 	},
 	onSuccess(data) {
+		const isComplete = data?.status === 'Complete'
+		isSuccessfullyCompleted.value = isComplete
+		completionSaved.value = isComplete
 		readyToRender.value = true
 	},
 })
+
+const goToNextLesson = () => {
+	if (!completionSaved.value || !nextLesson.value) return
+	const { chapter: nextChapter, lesson } = nextLesson.value
+	if (nextChapter.is_scorm_package) {
+		router.push({
+			name: 'SCORMChapter',
+			params: {
+				courseName: props.courseName,
+				chapterName: nextChapter.name,
+			},
+		})
+		return
+	}
+
+	const [chapterNumber, lessonNumber] = lesson.number.split('-')
+	router.push({
+		name: 'Lesson',
+		params: { courseName: props.courseName, chapterNumber, lessonNumber },
+	})
+}
+
+const goToCourse = () => {
+	router.push({
+		name: 'CourseDetail',
+		params: { courseName: props.courseName },
+	})
+}
 
 const enrollStudent = () => {
 	enrollment.insert.submit(
@@ -187,7 +263,7 @@ const enrollStudent = () => {
 			onSuccess(data) {
 				window.location.reload()
 			},
-		}
+		},
 	)
 }
 

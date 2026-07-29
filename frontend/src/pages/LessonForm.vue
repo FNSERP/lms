@@ -11,7 +11,7 @@
 						<Tooltip
 							:text="
 								__(
-									'When on, anyone can preview this lesson without enrolling. Otherwise it is visible only to enrolled students.'
+									'When on, anyone can preview this lesson without enrolling. Otherwise it is visible only to enrolled students.',
 								)
 							"
 						>
@@ -20,6 +20,14 @@
 							/>
 						</Tooltip>
 					</div>
+					<FormControl
+						v-model="lesson.completion_mode"
+						type="select"
+						:label="__('Completion method')"
+						:options="completionModes"
+						class="w-56"
+						@change="markDirty"
+					/>
 				</div>
 			</div>
 
@@ -75,6 +83,7 @@
 import {
 	Badge,
 	Button,
+	FormControl,
 	Switch,
 	call,
 	createResource,
@@ -222,10 +231,13 @@ useKeyboardShortcuts({
 const lesson = reactive({
 	title: '',
 	include_in_preview: false,
+	completion_mode: 'Automatic',
 	body: '',
 	instructor_notes: '',
 	content: '',
 })
+
+const completionModes = ['Automatic', 'Confirm and Continue']
 
 const lessonHasVideo = computed(() => hasVideoContent(lesson))
 
@@ -247,6 +259,7 @@ const lessonDetails = createResource({
 			lesson.include_in_preview = data?.lesson?.include_in_preview
 				? true
 				: false
+			lesson.completion_mode = data?.lesson?.completion_mode || 'Automatic'
 			contentUploadContext.docname = data.lesson.name
 			instructorUploadContext.docname = data.lesson.name
 			nextTick(autoGrowTitle)
@@ -266,7 +279,7 @@ const lessonDetails = createResource({
 							editor.value?.focus()
 						}
 					})
-				}
+				},
 			)
 		}
 	},
@@ -280,7 +293,7 @@ const addLessonContent = (data) => {
 		if (!editor.value) return
 		if (data.lesson.content) {
 			return editor.value.render(
-				sanitizeEditorJs(JSON.parse(data.lesson.content))
+				sanitizeEditorJs(JSON.parse(data.lesson.content)),
 			)
 		} else if (data.lesson.body) {
 			let blocks = convertToJSON(data.lesson)
@@ -297,7 +310,7 @@ const addInstructorNotes = (data) => {
 		if (!instructorEditor.value) return
 		if (data.lesson.instructor_content) {
 			return instructorEditor.value.render(
-				sanitizeEditorJs(JSON.parse(data.lesson.instructor_content))
+				sanitizeEditorJs(JSON.parse(data.lesson.instructor_content)),
 			)
 		} else if (data.lesson.instructor_notes) {
 			let blocks = convertToJSON(data.lesson)
@@ -452,13 +465,13 @@ const createNewLesson = () => {
 							emit('saved', { isNew: true })
 							lessonDetails.reload()
 						},
-					}
+					},
 				)
 			},
 			onError(err) {
 				toast.error(err.messages?.[0] || err)
 			},
-		}
+		},
 	)
 }
 
@@ -482,7 +495,7 @@ const editCurrentLesson = (isRetry = false) => {
 						isNew: false,
 					})
 				},
-			}
+			},
 		)
 		.catch((err) => {
 			if (lessonDeleted) return

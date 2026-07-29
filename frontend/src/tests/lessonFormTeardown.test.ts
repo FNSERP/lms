@@ -47,6 +47,7 @@ vi.mock('frappe-ui', async () => {
 		toast: { success: vi.fn(), error: vi.fn() },
 		Badge: stub('Badge'),
 		Button: stub('Button'),
+		FormControl: stub('FormControl'),
 		Switch: stub('Switch'),
 		Tooltip: stub('Tooltip'),
 	}
@@ -81,7 +82,7 @@ vi.mock('@/components/BlockEditor.vue', async () => {
 						if (field === 'instructor_content' && editorState.rejectNotesSave) {
 							throw new Error('editor torn down mid-save')
 						}
-						return alive ? editorState.saveData[field] ?? null : null
+						return alive ? (editorState.saveData[field] ?? null) : null
 					},
 				})
 				return () => h('div', { class: 'block-editor-stub' })
@@ -126,7 +127,7 @@ const findResource = (url: string, doctype?: string) =>
 			r._config.url === url &&
 			(!doctype ||
 				r._config.makeParams?.({})?.doc?.doctype === doctype ||
-				r._config.makeParams?.({ lesson: '' })?.doctype === doctype)
+				r._config.makeParams?.({ lesson: '' })?.doctype === doctype),
 	)
 
 // Mount LessonForm and drive its lessonDetails resource to "loaded" so the
@@ -149,7 +150,7 @@ async function mountLoaded(lessonOverrides: Record<string, any> = {}) {
 		attachTo: document.body,
 	})
 	const details = created.list.find(
-		(r) => r._config.url === 'lms.lms.utils.get_lesson_creation_details'
+		(r) => r._config.url === 'lms.lms.utils.get_lesson_creation_details',
 	)
 	const data = {
 		lesson: {
@@ -220,7 +221,7 @@ describe('LessonForm teardown autosave', () => {
 		expect(editLesson.submit).toHaveBeenCalledTimes(1)
 		expect(editLesson.lastParams.name).toBe(LESSON_NAME)
 		expect(editLesson.lastParams.fieldname.instructor_content).toContain(
-			'Edited note'
+			'Edited note',
 		)
 	})
 
@@ -284,10 +285,10 @@ describe('LessonForm teardown autosave', () => {
 		const editLesson = findResource('frappe.client.set_value')
 		expect(editLesson.submit).toHaveBeenCalledTimes(1)
 		expect(editLesson.lastParams.fieldname.instructor_content).toContain(
-			'New note'
+			'New note',
 		)
 		expect(editLesson.lastParams.fieldname.instructor_content).not.toContain(
-			'Old note'
+			'Old note',
 		)
 	})
 
@@ -311,7 +312,7 @@ describe('LessonForm teardown autosave', () => {
 		expect(editLesson.submit).toHaveBeenCalledTimes(1)
 		// The stored notes must survive — folding the empty default would wipe them.
 		expect(editLesson.lastParams.fieldname.instructor_content).toBe(
-			STORED_NOTES
+			STORED_NOTES,
 		)
 	})
 
@@ -396,7 +397,7 @@ describe('LessonForm title is single-line', () => {
 		await flushPromises()
 
 		expect((titleField().element as HTMLTextAreaElement).value).toBe(
-			'First line second line'
+			'First line second line',
 		)
 	})
 
@@ -404,7 +405,7 @@ describe('LessonForm title is single-line', () => {
 		wrapper = await mountLoaded({ title: 'Assignment\nsjksjla' })
 
 		expect((titleField().element as HTMLTextAreaElement).value).toBe(
-			'Assignment sjksjla'
+			'Assignment sjksjla',
 		)
 	})
 
