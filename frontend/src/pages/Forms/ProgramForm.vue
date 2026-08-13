@@ -535,40 +535,16 @@ const addMember = (close: () => void) => {
 	}
 }
 
-const updateOrder = async (e: any) => {
-	let sourceIdx = e.from.dataset.idx
-	let targetIdx = e.to.dataset.idx
-
-	if (isNew.value) {
-		let courses = program.value.program_courses
-		courses.splice(targetIdx, 0, courses.splice(sourceIdx, 1)[0])
-		courses.forEach((course, index) => {
-			course.idx = index + 1
-		})
-		dirty.value = true
-	} else {
-		let courses = programCourses.data
-		courses.splice(targetIdx, 0, courses.splice(sourceIdx, 1)[0])
-
-		for (const [index, course] of courses.entries()) {
-			submitResource(
-				programCourses.setValue,
-				{
-					name: course.name,
-					idx: index + 1,
-				},
-				{
-					onError(err: any) {
-						toast.warning(__(err.messages?.[0] || err))
-					},
-				}
-			)
-			await wait(100)
-		}
-	}
+const updateOrder = () => {
+	// vuedraggable has already updated the bound array when `end` fires.
+	// Re-splicing it from DOM dataset values moved the wrong row because the
+	// list containers do not expose data-idx. Persist the current array order
+	// with the rest of the program when Save is clicked.
+	program.value.program_courses.forEach((course, index) => {
+		course.idx = index + 1
+	})
+	dirty.value = true
 }
-
-const wait = (ms: number) => new Promise((res) => setTimeout(res, ms))
 
 const remove = (
 	selections: string[],
@@ -578,11 +554,15 @@ const remove = (
 	const selectionsArray = Array.from(selections)
 	if (type === 'courses') {
 		program.value.program_courses = program.value.program_courses.filter(
-			(c: any) => !selectionsArray.includes(c.name || c.course)
+			(c: any) =>
+				!selectionsArray.includes(c.name) &&
+				!selectionsArray.includes(c.course)
 		)
 	} else {
 		program.value.program_members = program.value.program_members.filter(
-			(m: any) => !selectionsArray.includes(m.name || m.member)
+			(m: any) =>
+				!selectionsArray.includes(m.name) &&
+				!selectionsArray.includes(m.member)
 		)
 	}
 	dirty.value = true

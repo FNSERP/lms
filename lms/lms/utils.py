@@ -431,14 +431,15 @@ def get_courses_under_review():
 
 
 def validate_image(path: str) -> str:
-	if path and "/private" in path:
-		frappe.db.set_value(
-			"File",
-			{"file_url": path},
-			"is_private",
-			0,
-		)
-		return path.replace("/private", "")
+	if path and path.startswith("/private/files/"):
+		file_name = frappe.db.get_value("File", {"file_url": path}, "name")
+		if not file_name:
+			return path
+
+		file_doc = frappe.get_doc("File", file_name)
+		file_doc.is_private = 0
+		file_doc.save(ignore_permissions=True)
+		return file_doc.file_url
 	return path
 
 
@@ -2657,6 +2658,13 @@ def get_program_details(program_name: str) -> dict:
 	previous_progress = 0
 	for i, course in enumerate(program_courses):
 		details = get_course_details(course.course)
+		if not details:
+			frappe.throw(
+				_("Course {0} is unavailable, unpublished, or inaccessible.").format(
+					course.course
+				)
+			)
+
 		if i == 0:
 			details.eligible = True
 		elif previous_progress == 100:
