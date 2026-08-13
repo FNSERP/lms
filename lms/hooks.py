@@ -91,6 +91,10 @@ after_migrate = [
 
 permission_query_conditions = {
 	"LMS Certificate": "lms.lms.doctype.lms_certificate.lms_certificate.get_permission_query_conditions",
+	"LMS Live Class": "lms.lms.doctype.lms_live_class.lms_live_class.get_permission_query_conditions",
+	"LMS Batch": "lms.lms.doctype.lms_batch.lms_batch.get_permission_query_conditions",
+	"LMS Program": "lms.lms.doctype.lms_program.lms_program.get_permission_query_conditions",
+	"Course Lesson": "lms.lms.doctype.course_lesson.course_lesson.get_permission_query_conditions",
 }
 
 has_permission = {
@@ -290,8 +294,14 @@ require_type_annotated_api_methods = True
 
 # === Raven membership provider ===
 # Hook contract + admin setup: ../raven-membership-provider.md
-# TODO: that page is an interim capture — publish it at docs.frappe.io/learning
+# TODO: that page is an interim capture. Publish it at docs.frappe.io/learning
 # (specs/extensibility.md: "A hook isn't shipped until the docs exist") and delete it.
 # LMS contributes its rule types + evaluator to the standalone `raven_integration`
 # app via the `raven_membership_providers` hook. See lms/raven_provider.py.
 raven_membership_providers = ["lms.raven_provider.get_provider"]
+
+# Settings > Integrations > Raven sits inside the Settings modal, which is open to
+# any Moderator, so the endpoints behind it have to be too. raven_integration gates
+# on System Manager plus whatever this hook names, and grants the named roles the
+# permissions its own doctypes need on install/migrate.
+raven_integration_manager_roles = ["Moderator"]

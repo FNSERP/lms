@@ -4,12 +4,14 @@
 		variant="form"
 		class="flex-1 min-h-0"
 	/>
-	<div v-else class="grid grid-cols-1 md:grid-cols-[70%,30%] flex-1 min-h-0">
-		<div class="overflow-y-auto p-5 space-y-8">
+	<div v-else class="grid grid-cols-1 flex-1 md:min-h-0 md:grid-cols-[70%,30%]">
+		<div class="space-y-8 p-5 md:overflow-y-auto">
 			<CourseDetailsSection />
 			<CourseOverviewSection />
 		</div>
-		<aside class="border-s overflow-y-auto px-3">
+		<aside
+			class="border-t md:overflow-y-auto md:border-s md:border-t-0 md:px-3"
+		>
 			<CoursePublishSettings />
 		</aside>
 	</div>
@@ -38,8 +40,8 @@ import {
 } from '@/composables/useKeyboardShortcuts'
 import { exportCourseAsZip } from '@/utils/exportCourse'
 import SkeletonLoader from '@/components/SkeletonLoader.vue'
-import CourseDetailsSection from '@/pages/Courses/CourseDetailsSection.vue'
-import CourseOverviewSection from '@/pages/Courses/CourseOverviewSection.vue'
+import CourseDetailsSection from '@/components/Courses/CourseDetailsSection.vue'
+import CourseOverviewSection from '@/components/Courses/CourseOverviewSection.vue'
 import CoursePublishSettings from '@/pages/Courses/CoursePublishSettings.vue'
 import type { LMSCourse } from '@/types/lms/LMSCourse'
 import type { CourseInstructor } from '@/types/lms/CourseInstructor'
@@ -109,7 +111,7 @@ const validateForm = (): string | null =>
 
 // Debounced so a burst of edits collapses into a single save shortly after the
 // user pauses. When a mandatory field is empty or the price is invalid, the
-// autosave can't succeed — surface the reason once and keep the "Not Saved"
+// autosave can't succeed. Surface the reason once and keep the "Not Saved"
 // badge (isDirty stays true) so the change isn't silently lost.
 const autoSave = useDebounceFn((): void => {
 	if (!isDirty.value) return
@@ -246,7 +248,7 @@ const deleteCourse = createResource({
 	},
 	onSuccess() {
 		toast.success(__('Course deleted successfully'))
-		// Land on the creator's "Created" courses — pick another course to edit.
+		// Land on the creator's "Created" courses. Pick another course to edit.
 		router.push({ name: 'Courses', query: { tab: 'created' } })
 	},
 	onError(err: { messages?: string[] } | string) {

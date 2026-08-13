@@ -4,16 +4,7 @@ import {
 	isVideoComplete,
 	shouldStartDwellTimer,
 	shouldAttachVideoFallback,
-	isConfirmAndContinueMode,
 } from '@/utils/lessonProgress'
-
-describe('isConfirmAndContinueMode', () => {
-	it('matches only the explicit confirmation mode', () => {
-		expect(isConfirmAndContinueMode('Confirm and Continue')).toBe(true)
-		expect(isConfirmAndContinueMode('Automatic')).toBe(false)
-		expect(isConfirmAndContinueMode(null)).toBe(false)
-	})
-})
 
 describe('resolveDwellSeconds', () => {
 	it('returns the parsed number for a positive integer', () => {
@@ -60,7 +51,7 @@ describe('isVideoComplete', () => {
 		expect(isVideoComplete(0, 100)).toBe(false)
 	})
 
-	it('returns false when duration is 0 (video not loaded — avoids false-positive on init)', () => {
+	it('returns false when duration is 0 (video not loaded; avoids false-positive on init)', () => {
 		expect(isVideoComplete(0, 0)).toBe(false)
 		expect(isVideoComplete(100, 0)).toBe(false)
 	})
@@ -79,31 +70,31 @@ describe('isVideoComplete', () => {
 describe('shouldStartDwellTimer', () => {
 	it('starts when there is no video', () => {
 		expect(
-			shouldStartDwellTimer({ hasVideo: false, enforceVideo: false }),
+			shouldStartDwellTimer({ hasVideo: false, enforceVideo: false })
 		).toBe(true)
 		expect(shouldStartDwellTimer({ hasVideo: false, enforceVideo: true })).toBe(
-			true,
+			true
 		)
 		expect(shouldStartDwellTimer({ hasVideo: false, enforceVideo: 1 })).toBe(
-			true,
+			true
 		)
 	})
 
 	it('starts when there is video but enforcement is off (legacy 30s behavior)', () => {
 		expect(shouldStartDwellTimer({ hasVideo: true, enforceVideo: false })).toBe(
-			true,
+			true
 		)
 		expect(shouldStartDwellTimer({ hasVideo: true, enforceVideo: 0 })).toBe(
-			true,
+			true
 		)
 	})
 
 	it('does NOT start when video is present and enforcement is on', () => {
 		expect(shouldStartDwellTimer({ hasVideo: true, enforceVideo: true })).toBe(
-			false,
+			false
 		)
 		expect(shouldStartDwellTimer({ hasVideo: true, enforceVideo: 1 })).toBe(
-			false,
+			false
 		)
 	})
 })
@@ -111,28 +102,28 @@ describe('shouldStartDwellTimer', () => {
 describe('shouldAttachVideoFallback', () => {
 	it('does not attach without a video', () => {
 		expect(
-			shouldAttachVideoFallback({ hasVideo: false, enforceVideo: false }),
+			shouldAttachVideoFallback({ hasVideo: false, enforceVideo: false })
 		).toBe(false)
 		expect(
-			shouldAttachVideoFallback({ hasVideo: false, enforceVideo: true }),
+			shouldAttachVideoFallback({ hasVideo: false, enforceVideo: true })
 		).toBe(false)
 	})
 
 	it('does not attach when enforcement is off (no recovery needed)', () => {
 		expect(
-			shouldAttachVideoFallback({ hasVideo: true, enforceVideo: false }),
+			shouldAttachVideoFallback({ hasVideo: true, enforceVideo: false })
 		).toBe(false)
 		expect(shouldAttachVideoFallback({ hasVideo: true, enforceVideo: 0 })).toBe(
-			false,
+			false
 		)
 	})
 
 	it('attaches only when both flags are true', () => {
 		expect(
-			shouldAttachVideoFallback({ hasVideo: true, enforceVideo: true }),
+			shouldAttachVideoFallback({ hasVideo: true, enforceVideo: true })
 		).toBe(true)
 		expect(shouldAttachVideoFallback({ hasVideo: true, enforceVideo: 1 })).toBe(
-			true,
+			true
 		)
 	})
 })

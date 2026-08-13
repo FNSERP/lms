@@ -31,7 +31,7 @@
 			class="relative flex h-full min-h-64 w-full grow justify-center"
 		>
 			<div
-				class="absolute left-1/2 top-[35%] flex w-4/12 -translate-x-1/2 flex-col items-center gap-3 px-4"
+				class="absolute inset-x-0 top-[35%] mx-auto flex w-4/12 flex-col items-center gap-3 px-4"
 			>
 				<p v-if="notPermitted" class="text-center text-p-base text-ink-gray-6">
 					{{
@@ -99,15 +99,18 @@ defineProps<{ label: string; description: string }>()
 // state, else they get the "not set up" card telling them to fix what they can't.
 const notPermitted = ref(false)
 
+// LMS, not raven_integration: calling a method of an app that is not installed
+// raises AppNotInstalledError, and frappe-ui dumps the server traceback and
+// rethrows before onError runs. See lms.raven_provider.get_raven_setup.
 const setup = createResource<RavenSetupState>({
-	url: 'raven_integration.api.is_setup',
+	url: 'lms.raven_provider.get_raven_setup',
 	auto: true,
 	onError(err: { exc_type?: string }) {
 		notPermitted.value = err?.exc_type === 'PermissionError'
 	},
 })
 
-// True while either app is missing or the integration is not yet enabled — those
+// True while either app is missing or the integration is not yet enabled. Those
 // states render a vertically-centered card.
 const needsSetup = computed(
 	(): boolean =>

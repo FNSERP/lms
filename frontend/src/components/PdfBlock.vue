@@ -11,12 +11,9 @@
 				>
 					<ChevronLeft :size="18" :stroke-width="1.5" />
 				</button>
-				<span class="pdf-page-indicator">
-					<template v-if="numPages"
-						>{{ currentPage }} / {{ numPages }}</template
-					>
-					<template v-else>—</template>
-				</span>
+				<span class="pdf-page-indicator">{{
+					numPages ? currentPage + ' / ' + numPages : '-'
+				}}</span>
 				<button
 					type="button"
 					class="pdf-btn"
@@ -57,9 +54,8 @@
 				</button>
 				<a
 					class="pdf-btn"
-					:href="file"
-					target="_blank"
-					rel="noopener"
+					:href="safeUrl(file)"
+					v-external
 					aria-label="Open in new tab"
 				>
 					<ExternalLink :size="16" :stroke-width="1.5" />
@@ -74,12 +70,7 @@
 			</div>
 			<div v-else-if="error" class="pdf-status pdf-error">
 				<span>{{ error }}</span>
-				<a
-					class="pdf-fallback-link"
-					:href="file"
-					target="_blank"
-					rel="noopener"
-				>
+				<a class="pdf-fallback-link" :href="safeUrl(file)" v-external>
 					Open the PDF in a new tab
 				</a>
 			</div>
@@ -112,12 +103,13 @@ import {
 	ExternalLink,
 	Loader2,
 } from 'lucide-vue-next'
+import { safeUrl } from '@/utils/safeUrl'
 
 const props = defineProps({
 	file: { type: String, required: true },
 })
 
-// iOS Safari blanks a canvas past its area/memory limit — pdf.js's own failure
+// iOS Safari blanks a canvas past its area/memory limit: pdf.js's own failure
 // mode on large or high-DPI pages. Cap the backing store to pdf.js's default.
 const MAX_CANVAS_PIXELS = 16_777_216
 const MIN_SCALE = 0.25
@@ -139,6 +131,7 @@ let canvasEls = []
 let renderTasks = [] // active RenderTask per page index
 let rendered = [] // bool per page index
 let rafId = null
+let task = null // in-flight PDFDocumentLoadingTask
 
 // --- shared, ref-counted worker (multi-instance safe; terminated on last unmount) ---
 // A leaked pdf.js worker is worse than a leaked <audio>, so we always release it.
@@ -160,16 +153,27 @@ async function load() {
 		// fold ~144kB gzip of pdf.js into the main entry that every LMS page pays.
 		pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs')
 		if (disposed) return
-		if (sharedWorker) pdfjsLib.GlobalWorkerOptions.workerPort = sharedWorker
+		// Wrap the raw port in our own PDFWorker and pass it explicitly. Via
+		// GlobalWorkerOptions.workerPort, pdf.js hands each loading task
+		// ownership of the shared worker, so one viewer's pdfDoc.destroy()
+		// tears down the port-level message handler every *sibling* viewer is
+		// still listening on. Their getDocument() then never settles and the
+		// spinner runs forever. Passing `worker` keeps ownership here.
+		if (sharedWorker && !sharedPdfWorker) {
+			sharedPdfWorker = new pdfjsLib.PDFWorker({ port: sharedWorker })
+		}
 
 		const base = import.meta.env.BASE_URL || '/'
 		const loadingTask = pdfjsLib.getDocument({
-			url: props.file,
+			url: safeUrl(props.file),
+			worker: sharedPdfWorker || undefined,
 			cMapUrl: `${base}pdfjs/cmaps/`,
 			cMapPacked: true,
 			standardFontDataUrl: `${base}pdfjs/standard_fonts/`,
 		})
+		task = loadingTask
 		pdfDoc = await loadingTask.promise
+		task = null
 		if (disposed) return
 		numPages.value = pdfDoc.numPages
 
@@ -198,7 +202,7 @@ async function load() {
 	}
 }
 
-// Synchronous so the ref is taken at mount, before load()'s first await — the
+// Synchronous so the ref is taken at mount, before load()'s first await. The
 // GlobalWorkerOptions.workerPort wiring happens later in load() once pdf.js is
 // imported. pdf.js falls back to its main-thread worker if none is available.
 function acquireWorker() {
@@ -222,10 +226,14 @@ function releaseWorker() {
 	if (!heldWorker) return
 	heldWorker = false
 	sharedWorkerRefs = Math.max(0, sharedWorkerRefs - 1)
-	if (sharedWorkerRefs === 0 && sharedWorker) {
-		sharedWorker.terminate()
+	// Not guarded on the per-instance `pdfjsLib`: an instance that unmounts
+	// before its dynamic import resolves would otherwise strand a terminated
+	// worker in module scope.
+	if (sharedWorkerRefs === 0) {
+		sharedPdfWorker?.destroy()
+		sharedPdfWorker = null
+		sharedWorker?.terminate()
 		sharedWorker = null
-		if (pdfjsLib) pdfjsLib.GlobalWorkerOptions.workerPort = null
 	}
 }
 
@@ -375,10 +383,13 @@ onBeforeUnmount(() => {
 	renderTasks = []
 	try {
 		pdfDoc?.destroy()
+		// A load that never resolved leaves pdfDoc null, so cancel the task too.
+		task?.destroy()
 	} catch (e) {
 		/* noop */
 	}
 	pdfDoc = null
+	task = null
 	releaseWorker()
 })
 
@@ -389,6 +400,9 @@ defineExpose({ fitWidth, goToPage })
 // Module-scoped so every PdfBlock instance shares one pdf.js worker.
 let sharedWorker = null
 let sharedWorkerRefs = 0
+// The pdf.js-side wrapper for `sharedWorker`. Owned here, never by a loading
+// task, so one document's destroy() can't tear it out from under another's.
+let sharedPdfWorker = null
 </script>
 
 <style scoped>

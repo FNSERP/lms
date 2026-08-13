@@ -1,6 +1,6 @@
 <template>
 	<div class="mt-7 mb-20">
-		<div class="flex h-screen flex-col overflow-hidden">
+		<div class="flex h-dvh flex-col overflow-hidden">
 			<Calendar
 				v-if="evaluations.data?.length"
 				:config="{
@@ -75,6 +75,7 @@ const evaluations = createListResource({
 		'date',
 		'start_time',
 		'end_time',
+		'timezone',
 		'google_meet_link',
 	],
 	auto: true,

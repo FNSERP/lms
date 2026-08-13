@@ -26,7 +26,7 @@
 		"
 	>
 		<iframe
-			:src="chapter.doc.launch_file"
+			:src="safeUrl(chapter.doc.launch_file)"
 			:title="chapter.doc?.title || __('Lesson content')"
 			class="w-full h-[calc(100vh-3.00rem)]"
 		/>
@@ -63,6 +63,7 @@ import { computed, inject, onBeforeMount, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useSidebar } from '@/stores/sidebar'
 import { isScormCompletionSignal } from '@/utils/scorm'
+import { safeUrl } from '@/utils/safeUrl'
 import { sessionStore } from '../stores/session'
 
 const { brand } = sessionStore()

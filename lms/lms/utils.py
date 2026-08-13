@@ -1,7 +1,9 @@
 import hashlib
 import json
 import re
+from datetime import datetime
 from urllib.parse import quote
+from zoneinfo import ZoneInfo
 
 import frappe
 import requests
@@ -20,9 +22,12 @@ from frappe.utils import (
 	get_datetime,
 	get_frappe_version,
 	get_fullname,
+	get_system_timezone,
+	get_time,
 	getdate,
 	nowtime,
 	rounded,
+	to_timedelta,
 	validate_email_address,
 )
 from frappe.utils.html_utils import sanitize_html
@@ -703,6 +708,90 @@ def get_evaluator(course: str, batch: str = None):
 	return evaluator
 
 
+def get_zone(timezone: str) -> ZoneInfo | None:
+	"""None for anything that is not an IANA zone name.
+
+	Every timezone in LMS is a free-text `Data` field. New records hold a name
+	picked from `get_country_timezone_info` ("Asia/Kolkata"), older rows predate
+	that control and can hold anything ("IST (GMT+5:30)").
+	"""
+	if not timezone:
+		return None
+
+	try:
+		return ZoneInfo(timezone)
+	except (KeyError, ValueError):
+		return None
+
+
+def get_evaluation_display_timezone(course: str = None, batch: str = None) -> str:
+	"""The zone evaluation slots are *shown* in. Never the zone they are stored in.
+
+	Slots are authored and stored in the system timezone. `nowtime()`
+	comparisons and the naive datetime handed to Google Calendar all depend on
+	that. The batch declares the zone its cohort works in, so that is what a
+	learner books against; a direct-evaluation course has no batch, and falls
+	back to its own timezone, which is mandatory for a paid certificate.
+	"""
+	if batch:
+		timezone = frappe.db.get_value("LMS Batch", batch, "timezone")
+		if timezone:
+			return timezone
+
+	if course:
+		# Only when paid_certificate is set: the field `depends_on` it, so an
+		# unset course can be carrying a stale value from a toggle.
+		settings = frappe.db.get_value("LMS Course", course, ["paid_certificate", "timezone"], as_dict=True)
+		if settings and settings.paid_certificate and settings.timezone:
+			return settings.timezone
+
+	return get_system_timezone()
+
+
+def convert_from_system_timezone(date, time, timezone: str) -> tuple:
+	"""Move a system-time wall clock into `timezone`. Returns (date, time).
+
+	The date comes back because conversion rolls over: an evaluator's Monday
+	09:00 in Asia/Kolkata is Sunday 20:30 in America/Los_Angeles.
+
+	A zone name we cannot resolve is legacy free text with no offset to convert
+	against, so the wall clock is returned untouched: labelled, not moved.
+	"""
+	zone = get_zone(timezone)
+	system = get_zone(get_system_timezone())
+	if not zone or not system or zone.key == system.key:
+		return getdate(date), get_time(time)
+
+	moment = datetime.combine(getdate(date), get_time(time), tzinfo=system).astimezone(zone)
+	return moment.date(), moment.time()
+
+
+def format_timezone(timezone: str, at=None) -> str:
+	""" "Asia/Kolkata" -> "Asia/Kolkata (GMT+5:30)".
+
+	`at` is the instant to read the offset at: a date, a datetime, or None for
+	now. It matters because the offset shifts across DST, and the slot picker
+	spans 60 days.
+
+	Mirrors frontend/src/utils/timezone.ts so an email reads the same as the
+	screen it was booked from. Values that are not IANA zone names are echoed:
+	they already read as a timezone to a human, and there is no safe way to
+	parse them back into one.
+	"""
+	if not timezone:
+		return ""
+
+	zone = get_zone(timezone)
+	if not zone:
+		return timezone
+
+	moment = get_datetime(at).replace(tzinfo=zone) if at else datetime.now(zone)
+	total_minutes = int(moment.utcoffset().total_seconds() // 60)
+	hours, minutes = divmod(abs(total_minutes), 60)
+	sign = "+" if total_minutes >= 0 else "-"
+	return f"{timezone} (GMT{sign}{hours}:{minutes:02d})"
+
+
 def check_multicurrency(amount: float, currency: str, country: str = None, amount_usd: float = None):
 	settings = frappe.get_single("LMS Settings")
 	show_usd_equivalent = settings.show_usd_equivalent
@@ -775,9 +864,25 @@ def guest_access_allowed():
 	return True
 
 
-@frappe.whitelist(allow_guest=True)
+DEFAULT_PAGE_LENGTH = 24
+MAX_PAGE_LENGTH = 120
+
+
+def resolve_page_length(limit_page_length=None) -> int:
+	"""How many rows a list endpoint returns for a client-supplied page size.
+
+	`createListResource` sends `limit_page_length` and advances `start` by the
+	same number, so an endpoint that ignores it hands back a page of a different
+	size and the next page repeats rows. Bounded because these endpoints are
+	open to guests and an unbounded page size is a cheap way to ask for a table.
+	"""
+	page_length = cint(limit_page_length) or DEFAULT_PAGE_LENGTH
+	return min(max(page_length, 1), MAX_PAGE_LENGTH)
+
+
+@frappe.whitelist(allow_guest=True)  # nosemgrep: frappe-semgrep-rules.rules.security.guest-whitelisted-method
 @rate_limit(limit=500, seconds=60 * 60)
-def get_courses(filters: dict = None, start: int = 0) -> list:
+def get_courses(filters: dict = None, start: int = 0, limit_page_length: int | str = None) -> list:
 	"""Returns the list of courses."""
 
 	if not guest_access_allowed():
@@ -788,22 +893,80 @@ def get_courses(filters: dict = None, start: int = 0) -> list:
 
 	filters, or_filters, show_featured = update_course_filters(filters)
 	fields = get_course_fields()
+	page_length = resolve_page_length(limit_page_length)
+	start = cint(start)
 
-	courses = frappe.get_all(
-		"LMS Course",
-		filters=filters,
-		fields=fields,
-		or_filters=or_filters,
-		order_by="enrollments desc",
-		start=start,
-		page_length=30,
+	# Featured courses lead the list, and the query below excludes them, so the
+	# two together are one sequence the caller pages through. Slicing has to
+	# treat it that way: prepending them to a full page returned a page longer
+	# than the one asked for, and since the caller advances `start` by the size
+	# it asked for, the next page then repeated whatever the extras pushed past
+	# the end.
+	# Read only as far as the window: `len(featured)` below is the offset the rest
+	# of the sequence starts at, and it is only needed when the window runs past
+	# the featured rows, which is exactly when this read returned all of them.
+	featured = (
+		get_featured_courses(filters.copy(), or_filters, fields, start + page_length) if show_featured else []
 	)
-	if show_featured and start == 0:
-		courses = get_featured_courses(filters, or_filters, fields) + courses
+	courses = featured[start : start + page_length]
+	remaining = page_length - len(courses)
+
+	if remaining > 0:
+		courses = courses + frappe.get_all(
+			"LMS Course",
+			filters=filters,
+			fields=fields,
+			or_filters=or_filters,
+			order_by="enrollments desc",
+			start=max(start - len(featured), 0),
+			page_length=remaining,
+		)
 
 	courses = get_enrollment_details(courses)
 	courses = get_course_card_details(courses)
 	return courses
+
+
+@frappe.whitelist(allow_guest=True)  # nosemgrep: frappe-semgrep-rules.rules.security.guest-whitelisted-method
+@rate_limit(limit=500, seconds=60 * 60)
+def get_course_count(filters: dict = None) -> int:
+	"""How many courses the same filters `get_courses` takes actually match.
+
+	The list footer cannot ask `frappe.client.get_count` for this: the tabs
+	filter on `enrolled`, `created` and `live`, which are not fields, and the
+	title search is an or_filter. Both only exist once `update_course_filters`
+	has resolved them.
+	"""
+	if not guest_access_allowed():
+		return 0
+
+	if not filters:
+		filters = {}
+
+	filters, or_filters, show_featured = update_course_filters(filters)
+	total = count_matching("LMS Course", filters, or_filters)
+	if show_featured:
+		# `update_course_filters` narrowed the query to featured=0 for the live
+		# tab, so the featured rows it leads with are counted separately.
+		total += count_matching("LMS Course", {**filters, "featured": 1}, or_filters)
+	return total
+
+
+def count_matching(doctype: str, filters: dict | list, or_filters: dict = None) -> int:
+	"""Row count for filters that include or_filters, which db.count cannot take."""
+	rows = frappe.get_all(doctype, filters=filters, or_filters=or_filters, fields=[{"COUNT": "*"}])
+	return cint(next(iter(rows[0].values()))) if rows else 0
+
+
+def as_filter_conditions(filters: dict) -> list:
+	"""The same filters as a list of conditions, which can hold two per field."""
+	conditions = []
+	for field, value in filters.items():
+		if isinstance(value, list | tuple):
+			conditions.append([field, value[0], value[1]])
+		else:
+			conditions.append([field, "=", value])
+	return conditions
 
 
 @frappe.whitelist(allow_guest=True)
@@ -904,7 +1067,7 @@ def get_enrollment_details(courses: list) -> list:
 	return courses
 
 
-def get_featured_courses(filters: dict, or_filters: dict, fields: list) -> list:
+def get_featured_courses(filters: dict, or_filters: dict, fields: list, page_length: int) -> list:
 	filters.update({"featured": 1})
 	featured_courses = frappe.get_all(
 		"LMS Course",
@@ -912,6 +1075,7 @@ def get_featured_courses(filters: dict, or_filters: dict, fields: list) -> list:
 		fields=fields,
 		or_filters=or_filters,
 		order_by="enrollments desc",
+		page_length=page_length,
 	)
 	return featured_courses
 
@@ -2193,8 +2357,8 @@ def serialize_callbacks_without_the_constraint():
 	Take one lock every callback contends for instead. The DocType row of the
 	table missing its constraint is an arbitrary choice, but it always exists and
 	nothing else writes it outside a migrate. Payment callbacks then queue
-	site-wide, which is coarse — and is why it only happens while the constraint
-	is missing — but it puts them back in line, so the second one sees the first
+	site-wide, which is coarse (and is why it only happens while the constraint
+	is missing), but it puts them back in line, so the second one sees the first
 	payment recorded."""
 	# Imported here: lms_payment imports get_lms_route from this module.
 	from lms.lms.doctype.lms_payment.lms_payment import has_unique_payment_id
@@ -2351,6 +2515,14 @@ def get_payment_total(payment_doc: dict) -> float:
 
 
 def enroll_in_course(course: str, payment_name: str):
+	# The check below exists so a repeated payment callback is a no-op, and an
+	# unlocked check cannot deliver that: two callbacks arriving together both read
+	# "absent", and the loser then hits the controller's own duplicate error —
+	# failing a request that has already taken the learner's money. Locking the
+	# course row first makes the skip reliable. The controller locks the same row,
+	# so this adds no new lock ordering.
+	frappe.db.get_value("LMS Course", course, "name", for_update=True)
+
 	if not frappe.db.exists("LMS Enrollment", {"member": frappe.session.user, "course": course}):
 		enrollment = frappe.new_doc("LMS Enrollment")
 		payment = frappe.db.get_value("LMS Payment", payment_name, ["name", "source"], as_dict=True)
@@ -2527,21 +2699,21 @@ def validate_program_enrollment(program: str):
 		frappe.throw(_("You cannot enroll in an unpublished program."))
 
 
-@frappe.whitelist(allow_guest=True)
+@frappe.whitelist(allow_guest=True)  # nosemgrep: frappe-semgrep-rules.rules.security.guest-whitelisted-method
 @rate_limit(limit=500, seconds=60 * 60)
-def get_batches(filters: dict = None, start: int = 0, order_by: str = "start_date"):
+def get_batches(
+	filters: dict = None,
+	start: int = 0,
+	order_by: str = "start_date",
+	limit_page_length: int | str = None,
+):
 	if not guest_access_allowed():
 		return []
 
 	if not filters:
 		filters = {}
 
-	if filters.get("enrolled"):
-		enrolled_batches = frappe.get_all(
-			"LMS Batch Enrollment", {"member": frappe.session.user}, pluck="batch"
-		)
-		filters.update({"name": ["in", enrolled_batches]})
-		del filters["enrolled"]
+	update_batch_filters(filters)
 
 	batches = frappe.get_all(
 		"LMS Batch",
@@ -2565,7 +2737,7 @@ def get_batches(filters: dict = None, start: int = 0, order_by: str = "start_dat
 		],
 		order_by=order_by,
 		start=start,
-		page_length=20,
+		page_length=resolve_page_length(limit_page_length),
 	)
 
 	batches = filter_batches_based_on_start_time(batches, filters)
@@ -2573,22 +2745,82 @@ def get_batches(filters: dict = None, start: int = 0, order_by: str = "start_dat
 	return batches
 
 
+def update_batch_filters(filters: dict) -> None:
+	"""Turns the pseudo-filters the batch list offers into real ones, in place."""
+	if filters.get("enrolled"):
+		enrolled_batches = frappe.get_all(
+			"LMS Batch Enrollment", {"member": frappe.session.user}, pluck="batch"
+		)
+		filters.update({"name": ["in", enrolled_batches]})
+		del filters["enrolled"]
+
+
+@frappe.whitelist(allow_guest=True)  # nosemgrep: frappe-semgrep-rules.rules.security.guest-whitelisted-method
+@rate_limit(limit=500, seconds=60 * 60)
+def get_batch_count(filters: dict = None) -> int:
+	"""How many batches the same filters `get_batches` takes actually match.
+
+	The list footer cannot ask `frappe.client.get_count` for this: the Upcoming
+	and Archived tabs turn on the time of day, and the query only settles the
+	date, so `filter_batches_based_on_start_time` decides the rest in Python.
+
+	Counted as two COUNTs rather than by fetching the rows and repeating that
+	pass over them: the endpoint is open to guests, so the work it does must not
+	grow with the number of batches on the site.
+	"""
+	if not guest_access_allowed():
+		return 0
+
+	if not filters:
+		filters = {}
+
+	update_batch_filters(filters)
+	total = count_matching("LMS Batch", filters)
+
+	batch_type = get_batch_type(filters)
+	if batch_type:
+		total -= count_batches_the_clock_decides(filters, batch_type)
+
+	return total
+
+
+def count_batches_the_clock_decides(filters: dict, batch_type: str) -> int:
+	"""How many matching batches `filter_batches_based_on_start_time` drops.
+
+	Only today's are ever in question. Every other date the query has already
+	settled. Upcoming drops the ones already under way; Archived, the ones still
+	to come. Both conditions are added rather than replacing the caller's date
+	filter, so a tab asking for `start_date > today` still counts nothing today.
+	"""
+	started = "<" if batch_type == "upcoming" else ">="
+	conditions = as_filter_conditions(filters) + [
+		["start_date", "=", getdate()],
+		["start_time", started, nowtime()],
+	]
+	return count_matching("LMS Batch", conditions)
+
+
+def has_started_today(batch) -> bool:
+	"""Whether a batch dated today has already begun.
+
+	Compared as times rather than as strings. `start_time` comes back from the
+	database as a timedelta, and `str()` renders a single-digit hour without a
+	leading zero. That sorted "9:00:00" above "14:30:00", so a batch that began
+	at nine that morning still counted as upcoming at half past two.
+	"""
+	if getdate(batch.start_date) != getdate():
+		return False
+	return to_timedelta(str(batch.start_time)) < to_timedelta(nowtime())
+
+
 def filter_batches_based_on_start_time(batches: list, filters: dict) -> list:
 	batchType = get_batch_type(filters)
 	if batchType == "upcoming":
-		batches_to_remove = [
-			batch
-			for batch in batches
-			if getdate(batch.start_date) == getdate() and str(batch.start_time) < nowtime()
-		]
-		batches = [batch for batch in batches if batch not in batches_to_remove]
+		batches = [batch for batch in batches if not has_started_today(batch)]
 	elif batchType == "archived":
-		batches_to_remove = [
-			batch
-			for batch in batches
-			if getdate(batch.start_date) == getdate() and str(batch.start_time) >= nowtime()
+		batches = [
+			batch for batch in batches if getdate(batch.start_date) != getdate() or has_started_today(batch)
 		]
-		batches = [batch for batch in batches if batch not in batches_to_remove]
 	return batches
 
 
@@ -2813,8 +3045,8 @@ def get_editorjs_blocks(content):
 	if not isinstance(blocks, list):
 		return []
 	# Keep only blocks a reader can safely reach block["data"][...] on: the block must be a
-	# dict, and `data` (if present) must be a dict. A present-but-non-dict data — null, str,
-	# list ({"type": "quiz", "data": "x"}) — is dropped; note a plain `.get("data", {})` guard
+	# dict, and `data` (if present) must be a dict. A present-but-non-dict data (null, str,
+	# or a list like {"type": "quiz", "data": "x"}) is dropped; note a plain `.get("data", {})` guard
 	# wouldn't save the null case. Hand-authored/partial content must not AttributeError a
 	# save, the outline, or progress tracking.
 	valid_blocks = []

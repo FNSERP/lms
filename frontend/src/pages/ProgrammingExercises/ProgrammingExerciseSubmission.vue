@@ -1,10 +1,5 @@
 <template>
-	<header
-		v-if="!fromLesson"
-		class="sticky flex items-center justify-between top-0 z-10 border-b bg-surface-base px-3 py-2.5 sm:px-5"
-	>
-		<Breadcrumbs :items="breadcrumbs" />
-	</header>
+	<PageHeader v-if="!fromLesson" :breadcrumbs="breadcrumbs" />
 	<div
 		v-if="falconError"
 		class="flex items-center justify-between p-3 text-sm bg-surface-amber-1 text-ink-amber-3"
@@ -25,7 +20,7 @@
 				{{ __('Problem Statement') }}
 			</h2>
 			<div
-				v-html="sanitizeRichHTML(exercise.doc?.problem_statement)"
+				v-safe-html:rich="exercise.doc?.problem_statement"
 				class="ProseMirror prose prose-table:table-fixed prose-td:p-2 prose-th:p-2 prose-td:border prose-th:border prose-td:border-outline-gray-2 prose-th:border-outline-gray-2 prose-td:relative prose-th:relative prose-th:bg-surface-gray-2 prose-sm max-w-none !whitespace-normal"
 			></div>
 		</div>
@@ -79,7 +74,6 @@
 						readonly
 					/>
 				</div>
-				<!-- <textarea v-else v-model="output" class="bg-surface-gray-1 border-none text-sm h-28 leading-6" readonly /> -->
 			</div>
 
 			<div ref="testCaseSection" class="p-5">
@@ -106,12 +100,6 @@
 							>
 								{{ testCase.status }}
 							</span>
-							<!-- <span v-if="testCase.status === 'Passed'">
-								<Check class="size-4 text-ink-green-3" />
-							</span>
-							<span v-else>
-								<X class="size-4 text-ink-red-3" />
-							</span> -->
 						</div>
 						<div class="flex items-center justify-between w-[60%]">
 							<div v-if="testCase.input" class="space-y-2">
@@ -147,10 +135,8 @@
 	</div>
 </template>
 <script setup lang="ts">
-import { sanitizeRichHTML } from '@/utils/sanitizeRichHTML'
 import {
 	Badge,
-	Breadcrumbs,
 	Button,
 	call,
 	createDocumentResource,
@@ -158,6 +144,7 @@ import {
 	usePageMeta,
 } from 'frappe-ui'
 import { computed, inject, onMounted, ref, watch } from 'vue'
+import PageHeader from '@/components/Layouts/PageHeader.vue'
 import { sessionStore } from '@/stores/session'
 import { useRouter } from 'vue-router'
 import { openSettings } from '@/utils'
@@ -168,7 +155,7 @@ import { provideStudentView } from '@/composables/useStudentView'
 const realUser = inject<any>('$user')
 
 // Rendered in an iframe from the lesson preview, so provide/inject can't reach
-// this app instance — Student View arrives as a query param instead, exactly as
+// this app instance; Student View arrives as a query param instead, exactly as
 // it does for assignment submissions. Unlike AssignmentSubmission, this page
 // reads the instructor flags in its *own* template (the settings button, the
 // view-someone-else's-submission branch), so it uses the masked user itself
@@ -315,7 +302,9 @@ watch(
 )
 
 const loadFalcon = () => {
-	if (settings.data) {
+	// An unset livecode_url leaves the default in place rather than building
+	// `undefined/static/livecode.js`.
+	if (settings.data?.livecode_url) {
 		falconURL.value = settings.data.livecode_url
 	}
 	return new Promise((resolve, reject) => {

@@ -13,6 +13,7 @@ from frappe.model.document import Document
 from frappe.utils import add_days, cint, format_datetime, get_time, nowdate
 
 from lms.lms.utils import (
+	format_timezone,
 	generate_slug,
 	get_assignment_details,
 	get_instructors,
@@ -191,7 +192,7 @@ def send_email_notification_for_published_batch(batch):
 		"end_date": batch.end_date,
 		"start_time": batch.start_time,
 		"medium": batch.medium,
-		"timezone": batch.timezone,
+		"timezone": format_timezone(batch.timezone, batch.start_date),
 		"instructors": instructors,
 		"batch_url": frappe.utils.get_url(get_lms_route(f"batches/{batch.name}")),
 	}
@@ -516,3 +517,22 @@ def has_permission(doc, ptype="read", user=None):
 		return True
 
 	return False
+
+
+def get_permission_query_conditions(user=None):
+	"""List-read counterpart of has_permission above: published, or enrolled."""
+	user = user or frappe.session.user
+	if user == "Administrator":
+		return ""
+
+	if user == "Guest" and not guest_access_allowed():
+		return "1 = 0"
+
+	roles = frappe.get_roles(user)
+	if "Moderator" in roles or "Batch Evaluator" in roles:
+		return ""
+
+	escaped = frappe.db.escape(user)
+	return f"""(`tabLMS Batch`.published = 1 or `tabLMS Batch`.name in (
+		select batch from `tabLMS Batch Enrollment` where member = {escaped}
+	))"""

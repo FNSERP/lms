@@ -1,10 +1,16 @@
 <template>
 	<div class="flex flex-col h-full">
 		<div class="bg-surface-gray-1 px-5 py-5 border-b">
-			<div class="text-lg-semibold text-ink-gray-9 leading-snug">
+			<div
+				v-if="!hideHeader"
+				class="text-lg-semibold text-ink-gray-9 leading-snug"
+			>
 				{{ courseTitle }}
 			</div>
-			<div class="mt-4 flex items-center gap-2 text-sm text-ink-gray-7">
+			<div
+				class="flex items-center gap-2 text-sm text-ink-gray-7"
+				:class="{ 'mt-4': !hideHeader }"
+			>
 				<Cloud class="size-4 stroke-1.5" />
 				<span>{{ __('Completed') }} {{ displayedProgress }}%</span>
 			</div>
@@ -59,6 +65,7 @@
 														chapterNumber: lesson.number.split('-')[0],
 														lessonNumber: lesson.number.split('-')[1],
 													},
+													query: studentViewQuery,
 											  }
 									"
 									class="flex w-full items-center gap-3 rounded ps-9 pe-3 py-2 text-start text-sm leading-5 text-ink-gray-8 hover:bg-surface-gray-2"
@@ -69,11 +76,10 @@
 											: '',
 									]"
 									@click="
-										inlineSelect &&
-											emit('select-lesson', {
-												chapterNumber: lesson.number.split('-')[0],
-												lessonNumber: lesson.number.split('-')[1],
-											})
+										emit('select-lesson', {
+											chapterNumber: lesson.number.split('-')[0],
+											lessonNumber: lesson.number.split('-')[1],
+										})
 									"
 								>
 									<component
@@ -101,6 +107,7 @@
 
 <script setup>
 import { computed, watch, watchEffect } from 'vue'
+import { useRoute } from 'vue-router'
 import { createResource } from 'frappe-ui'
 import { Disclosure, DisclosureButton, DisclosurePanel } from '@headlessui/vue'
 import {
@@ -124,9 +131,17 @@ const props = defineProps({
 	completedLesson: { type: String, default: null },
 	inlineSelect: { type: Boolean, default: false },
 	withProgress: { type: Boolean, default: true },
+	hideHeader: { type: Boolean, default: false },
 })
 
 const emit = defineEmits(['select-lesson'])
+
+// Keep ?studentView=1 across lesson hops, or a moderator previewing the course
+// silently reverts to their own identity on the first sidebar click.
+const route = useRoute()
+const studentViewQuery = computed(() =>
+	route.query.studentView === '1' ? { studentView: 1 } : undefined
+)
 
 const outline = createResource({
 	url: 'lms.lms.utils.get_course_outline',

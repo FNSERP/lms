@@ -1,8 +1,13 @@
 <template>
 	<div class="mt-7 mb-20">
-		<h2 class="mb-4 text-md font-semibold text-ink-gray-9">
-			{{ __('My availability') }}
-		</h2>
+		<div class="mb-4">
+			<h2 class="text-md font-semibold text-ink-gray-9">
+				{{ __('My availability') }}
+			</h2>
+			<p v-if="evaluator.data?.timezone" class="text-sm text-ink-gray-6">
+				{{ __('Times are in {0}').format(evaluator.data.timezone) }}
+			</p>
+		</div>
 
 		<div
 			v-if="readOnlyMode"
@@ -20,7 +25,7 @@
 		<div v-else>
 			<div>
 				<div
-					class="grid grid-cols-3 md:grid-cols-4 gap-4 text-sm text-ink-gray-7 mb-4"
+					class="hidden md:grid md:grid-cols-4 gap-4 text-sm text-ink-gray-7 mb-4"
 				>
 					<div>
 						{{ __('Day') }}
@@ -37,7 +42,7 @@
 					v-if="evaluator.data"
 					v-for="slot in evaluator.data.slots.schedule"
 					:key="slot.name"
-					class="grid grid-cols-3 md:grid-cols-4 gap-4 mb-4 group"
+					class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4 group"
 				>
 					<FormControl
 						type="select"
@@ -47,7 +52,10 @@
 						@update:modelValue="update(slot.name, 'day', $event)"
 						:disabled="!isSessionUser()"
 					/>
-					<label :for="`start-time-${slot.name}`" class="sr-only">
+					<label
+						:for="`start-time-${slot.name}`"
+						class="md:sr-only block text-xs text-ink-gray-5"
+					>
 						{{ __('Start Time') }}
 					</label>
 					<FormControl
@@ -57,7 +65,10 @@
 						@update:modelValue="update(slot.name, 'start_time', $event)"
 						:disabled="!isSessionUser()"
 					/>
-					<label :for="`end-time-${slot.name}`" class="sr-only">
+					<label
+						:for="`end-time-${slot.name}`"
+						class="md:sr-only block text-xs text-ink-gray-5"
+					>
 						{{ __('End Time') }}
 					</label>
 					<FormControl
@@ -71,13 +82,13 @@
 						v-if="isSessionUser()"
 						type="button"
 						:aria-label="__('Delete slot')"
-						class="lucide-x size-6 text-red-900 rounded-md cursor-pointer p-1 bg-surface-red-2 sr-only group-hover:not-sr-only focus:not-sr-only"
+						class="lucide-x size-6 text-red-900 rounded-md cursor-pointer p-1 bg-surface-red-2 md:sr-only md:group-hover:not-sr-only md:focus:not-sr-only"
 						@click="deleteRow(slot.name)"
 					/>
 				</div>
 
 				<div
-					class="grid grid-cols-3 md:grid-cols-4 gap-4 mb-4"
+					class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4"
 					v-show="showSlotsTemplate"
 				>
 					<FormControl
@@ -88,7 +99,10 @@
 						@update:modelValue="add()"
 						:disabled="!isSessionUser()"
 					/>
-					<label for="new-slot-start-time" class="sr-only">
+					<label
+						for="new-slot-start-time"
+						class="md:sr-only block text-xs text-ink-gray-5"
+					>
 						{{ __('Start Time') }}
 					</label>
 					<FormControl
@@ -98,7 +112,10 @@
 						@update:modelValue="add()"
 						:disabled="!isSessionUser()"
 					/>
-					<label for="new-slot-end-time" class="sr-only">
+					<label
+						for="new-slot-end-time"
+						class="md:sr-only block text-xs text-ink-gray-5"
+					>
 						{{ __('End Time') }}
 					</label>
 					<FormControl
@@ -121,10 +138,7 @@
 				<h2 class="mb-4 text-md font-semibold text-ink-gray-9">
 					{{ __('I am unavailable') }}
 				</h2>
-				<div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-					<!-- `@update:modelValue`, not `@blur`: the date control renders as a
-					     popover, so a native listener bound as a fallthrough attr is not
-					     reliably reached. -->
+				<div class="grid grid-cols-1 md:grid-cols-4 gap-4">
 					<FormControl
 						type="date"
 						:label="__('From')"
@@ -166,7 +180,7 @@
 					<span class="lucide-check size-4 me-2" />
 					{{ __('Your calendar is set.') }}
 				</div>
-				<Button @click="startCalendarAuthorization">
+				<Button class="text-p-base-medium" @click="startCalendarAuthorization">
 					{{ __('Authorize Google Calendar Access') }}
 				</Button>
 			</div>
@@ -174,9 +188,12 @@
 	</div>
 </template>
 <script setup>
+// The slots are stored as bare wall-clock times and read as system time
+// everywhere downstream, so the editor has to name the clock it means.
 import { createResource, FormControl, Button, Badge, toast } from 'frappe-ui'
 import { computed, reactive, ref, onMounted, inject, watch } from 'vue'
 import { convertToTitleCase } from '@/utils'
+import { openExternal } from '@/utils/openExternal'
 
 const user = inject('$user')
 const readOnlyMode = window.read_only_mode
@@ -302,6 +319,9 @@ const deleteSlot = createResource({
 	},
 })
 
+// The unavailability date controls call this from `@update:modelValue`, not
+// `@blur`: the date control renders as a popover, so a native listener bound as
+// a fallthrough attr is not reliably reached.
 const updateUnavailability = createResource({
 	url: 'lms.lms.api.set_evaluator_unavailability',
 	makeParams(values) {
@@ -368,7 +388,7 @@ const authorizeCalendar = createResource({
 		}
 	},
 	onSuccess(data) {
-		window.open(data.url)
+		openExternal(data.url)
 	},
 	onError(err) {
 		toast.error(err.messages?.[0] || err)
