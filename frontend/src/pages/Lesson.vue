@@ -41,7 +41,7 @@
 				variant="subtle"
 				class="!size-9"
 				:label="__('Next lesson')"
-				:disabled="!hasNext"
+				:disabled="!hasNext || confirmationRequired"
 				@click="goNext()"
 			>
 				<template #icon>
@@ -147,7 +147,11 @@
 									</template>
 									<span>{{ __('Previous') }}</span>
 								</Button>
-								<Button v-if="lesson.data.next" @click="switchLesson('next')">
+								<Button
+									v-if="lesson.data.next"
+									:disabled="confirmationRequired"
+									@click="switchLesson('next')"
+								>
 									<template #suffix>
 										<span class="lucide-chevron-right size-4" />
 									</template>
@@ -187,7 +191,11 @@
 									</span>
 								</Button>
 
-								<Button v-if="lesson.data.next" @click="switchLesson('next')">
+								<Button
+									v-if="lesson.data.next"
+									:disabled="confirmationRequired"
+									@click="switchLesson('next')"
+								>
 									<template #suffix>
 										<span class="lucide-chevron-right size-4" />
 									</template>
@@ -269,6 +277,21 @@
 								:youtube="lesson.data.youtube"
 								:quizId="lesson.data.quiz_id"
 							/>
+						</div>
+						<div
+							v-if="confirmationRequired && !isStudentView"
+							class="mt-10 flex justify-end border-t border-outline-gray-2 pt-5"
+						>
+							<Button
+								variant="solid"
+								:loading="progress.loading"
+								@click="confirmAndContinue"
+							>
+								<template #prefix>
+									<span class="lucide-circle-check size-4" />
+								</template>
+								{{ __('Confirm and Continue') }}
+							</Button>
 						</div>
 					</div>
 					<div
@@ -389,6 +412,7 @@ import {
 	isVideoComplete,
 	shouldStartDwellTimer,
 	shouldAttachVideoFallback,
+	isConfirmAndContinueMode,
 } from '@/utils/lessonProgress'
 import EditorJS from '@editorjs/editorjs'
 import LessonContent from '@/components/LessonContent.vue'
@@ -507,6 +531,13 @@ const lesson = createResource({
 	auto: true,
 })
 
+const confirmationRequired = computed(
+	() =>
+		isConfirmAndContinueMode(lesson.data?.completion_mode) &&
+		Boolean(lesson.data?.membership) &&
+		!lesson.data?.progress
+)
+
 const setupLesson = (data) => {
 	if (Object.keys(data).length === 0) {
 		router.push({
@@ -582,6 +613,7 @@ const renderEditor = (holder, content) => {
 let progressSubmitting = false
 const markProgress = () => {
 	if (progressSubmitting) return
+	if (isConfirmAndContinueMode(lesson.data?.completion_mode)) return
 	// Only enrolled students record progress; a moderator previewing has no
 	// membership row so save_progress would no-op server-side but still
 	// flip the in-memory `completedLesson` and show a green tick that
@@ -610,10 +642,11 @@ const markProgress = () => {
 
 const progress = createResource({
 	url: 'lms.lms.doctype.course_lesson.course_lesson.save_progress',
-	makeParams() {
+	makeParams(params = {}) {
 		return {
 			lesson: lesson.data.name,
 			course: props.courseName,
+			confirmed: params.confirmed ? 1 : 0,
 		}
 	},
 	onSuccess(data) {
@@ -621,6 +654,22 @@ const progress = createResource({
 		completedLesson.value = lesson.data?.name
 	},
 })
+
+const confirmAndContinue = () => {
+	if (!confirmationRequired.value || progress.loading) return
+	progress.submit(
+		{ confirmed: true },
+		{
+			onSuccess() {
+				lesson.data.progress = true
+				if (lesson.data.next) switchLesson('next')
+			},
+			onError(err) {
+				console.error(err)
+			},
+		}
+	)
+}
 
 const notes = createListResource({
 	doctype: 'LMS Lesson Note',
@@ -990,6 +1039,7 @@ const fallbackToDwellTimer = (reason) => {
 
 const startTimer = () => {
 	if (!lesson.data?.membership) return
+	if (isConfirmAndContinueMode(lesson.data?.completion_mode)) return
 	const dwell = resolveDwellSeconds(
 		settingsStore.settings?.data?.lesson_dwell_time
 	)

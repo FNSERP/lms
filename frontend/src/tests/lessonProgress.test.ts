@@ -4,7 +4,16 @@ import {
 	isVideoComplete,
 	shouldStartDwellTimer,
 	shouldAttachVideoFallback,
+	isConfirmAndContinueMode,
 } from '@/utils/lessonProgress'
+
+describe('isConfirmAndContinueMode', () => {
+	it('only requires confirmation for the explicit completion mode', () => {
+		expect(isConfirmAndContinueMode('Confirm and Continue')).toBe(true)
+		expect(isConfirmAndContinueMode('Automatic')).toBe(false)
+		expect(isConfirmAndContinueMode(undefined)).toBe(false)
+	})
+})
 
 describe('resolveDwellSeconds', () => {
 	it('returns the parsed number for a positive integer', () => {

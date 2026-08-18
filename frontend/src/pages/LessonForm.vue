@@ -31,6 +31,14 @@
 						</Tooltip>
 					</div>
 				</div>
+				<FormControl
+					v-model="lesson.completion_mode"
+					type="select"
+					:label="__('Completion method')"
+					:options="completionModes"
+					class="w-56"
+					@change="markDirty"
+				/>
 			</div>
 
 			<BottomSheet v-model="showLessonDetails" :title="__('Lesson details')">
@@ -51,6 +59,15 @@
 						<Switch
 							v-model="lesson.include_in_preview"
 							class="shrink-0"
+							@change="markDirty"
+						/>
+					</div>
+					<div class="border-t border-outline-gray-2 py-3">
+						<FormControl
+							v-model="lesson.completion_mode"
+							type="select"
+							:label="__('Completion method')"
+							:options="completionModes"
 							@change="markDirty"
 						/>
 					</div>
@@ -112,6 +129,7 @@
 import {
 	Badge,
 	Button,
+	FormControl,
 	Switch,
 	call,
 	createResource,
@@ -268,10 +286,13 @@ useKeyboardShortcuts({
 const lesson = reactive({
 	title: '',
 	include_in_preview: false,
+	completion_mode: 'Automatic',
 	body: '',
 	instructor_notes: '',
 	content: '',
 })
+
+const completionModes = ['Automatic', 'Confirm and Continue']
 
 const lessonHasVideo = computed(() => hasVideoContent(lesson))
 
@@ -293,6 +314,7 @@ const lessonDetails = createResource({
 			lesson.include_in_preview = data?.lesson?.include_in_preview
 				? true
 				: false
+			lesson.completion_mode = data?.lesson?.completion_mode || 'Automatic'
 			contentUploadContext.docname = data.lesson.name
 			instructorUploadContext.docname = data.lesson.name
 			nextTick(autoGrowTitle)
