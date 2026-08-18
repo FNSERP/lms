@@ -279,7 +279,7 @@
 							/>
 						</div>
 						<div
-							v-if="confirmationRequired && !isStudentView"
+							v-if="confirmationRequired"
 							class="mt-10 flex justify-end border-t border-outline-gray-2 pt-5"
 						>
 							<Button
@@ -534,8 +534,8 @@ const lesson = createResource({
 const confirmationRequired = computed(
 	() =>
 		isConfirmAndContinueMode(lesson.data?.completion_mode) &&
-		Boolean(lesson.data?.membership) &&
-		!lesson.data?.progress
+		(isStudentView.value ||
+			(Boolean(lesson.data?.membership) && !lesson.data?.progress))
 )
 
 const setupLesson = (data) => {
@@ -657,6 +657,10 @@ const progress = createResource({
 
 const confirmAndContinue = () => {
 	if (!confirmationRequired.value || progress.loading) return
+	if (isStudentView.value) {
+		if (lesson.data.next) switchLesson('next', true)
+		return
+	}
 	progress.submit(
 		{ confirmed: true },
 		{
@@ -766,8 +770,8 @@ const goNext = () => {
 		goToLessonNumber(lessonNumbers.value[currentIndex.value + 1])
 }
 
-const switchLesson = (direction) => {
-	if (direction === 'next' && confirmationRequired.value) return
+const switchLesson = (direction, confirmed = false) => {
+	if (direction === 'next' && confirmationRequired.value && !confirmed) return
 	trackVideoWatchDuration()
 	let target =
 		direction === 'prev'

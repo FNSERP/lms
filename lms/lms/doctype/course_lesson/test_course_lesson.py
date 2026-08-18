@@ -226,6 +226,24 @@ class TestRequiresExplicitConfirmation(unittest.TestCase):
 		self.assertFalse(self.fn(None, False))
 
 
+class TestVideoCompletionMode(unittest.TestCase):
+	def setUp(self):
+		from lms.lms.doctype.course_lesson.course_lesson import has_video_content
+
+		self.fn = has_video_content
+
+	def test_editor_embed_is_video_content(self):
+		lesson = frappe._dict(content=_content(_embed_block("youtube", EMBED_SERVICE_URLS["youtube"])))
+		self.assertTrue(self.fn(lesson))
+
+	def test_uploaded_video_extension_is_detected_without_file_type(self):
+		upload = {"type": "upload", "data": {"file": {"url": "/files/training.mp4"}}}
+		self.assertTrue(self.fn(frappe._dict(content=_content(upload))))
+
+	def test_text_only_lesson_is_not_video_content(self):
+		self.assertFalse(self.fn(frappe._dict(content=_content(NON_EMBED_BLOCKS["paragraph"]))))
+
+
 class TestServePrivateFileVersionSafe(unittest.TestCase):
 	"""serve_resource must not pass `filename=` to a Frappe whose send_private_file
 	predates that kwarg (LMS supports frappe>=14). Regression for the student-view 500:

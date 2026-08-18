@@ -36,6 +36,7 @@
 					type="select"
 					:label="__('Completion method')"
 					:options="completionModes"
+					:disabled="lessonHasVideo"
 					class="w-56"
 					@change="markDirty"
 				/>
@@ -68,6 +69,7 @@
 							type="select"
 							:label="__('Completion method')"
 							:options="completionModes"
+							:disabled="lessonHasVideo"
 							@change="markDirty"
 						/>
 					</div>
@@ -144,6 +146,7 @@ import {
 	ref,
 	nextTick,
 	onBeforeUnmount,
+	watch,
 } from 'vue'
 import { ChevronRight, NotebookPen } from 'lucide-vue-next'
 import { useDebounceFn } from '@vueuse/core'
@@ -295,6 +298,13 @@ const lesson = reactive({
 const completionModes = ['Automatic', 'Confirm and Continue']
 
 const lessonHasVideo = computed(() => hasVideoContent(lesson))
+
+watch(lessonHasVideo, (hasVideo) => {
+	if (hasVideo && lesson.completion_mode !== 'Automatic') {
+		lesson.completion_mode = 'Automatic'
+		markDirty()
+	}
+})
 
 const lessonDetails = createResource({
 	url: 'lms.lms.utils.get_lesson_creation_details',

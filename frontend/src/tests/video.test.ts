@@ -84,6 +84,15 @@ describe('hasVideoContent', () => {
 				}),
 			})
 		).toBe(true)
+		expect(
+			hasVideoContent({
+				content: JSON.stringify({
+					blocks: [
+						{ type: 'upload', data: { file: { url: '/files/training.mp4' } } },
+					],
+				}),
+			})
+		).toBe(true)
 	})
 
 	it('returns false for text-only lessons and bad input', () => {

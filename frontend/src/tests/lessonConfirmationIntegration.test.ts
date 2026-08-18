@@ -16,10 +16,18 @@ describe('Confirm and Continue integration', () => {
 		const lesson = source('../pages/Lesson.vue')
 		expect(lesson).toContain('const confirmationRequired = computed(')
 		expect(lesson).toContain('{ confirmed: true }')
+		expect(lesson).toContain('if (isStudentView.value) {')
+		expect(lesson).toContain("switchLesson('next', true)")
 		expect(lesson).toContain('confirmed: params.confirmed ? 1 : 0')
 		expect(lesson).toContain(
 			'if (isConfirmAndContinueMode(lesson.data?.completion_mode)) return'
 		)
 		expect(lesson).toContain("{{ __('Confirm and Continue') }}")
+	})
+
+	it('keeps video lessons automatic and the completion selector read-only', () => {
+		const form = source('../pages/LessonForm.vue')
+		expect(form).toContain(':disabled="lessonHasVideo"')
+		expect(form).toContain("lesson.completion_mode = 'Automatic'")
 	})
 })

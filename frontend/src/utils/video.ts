@@ -48,12 +48,20 @@ export function hasVideoContent(
 	if (lesson.content) {
 		try {
 			const blocks = JSON.parse(lesson.content)?.blocks || []
-			return blocks.some(
-				(block: { type?: string; data?: { file_type?: string } }) =>
-					block.type === 'embed' ||
-					(block.type === 'upload' &&
-						VIDEO_FILE_TYPES.includes(block.data?.file_type ?? ''))
-			)
+			return blocks.some((block: any) => {
+				if (block.type === 'embed') return true
+				if (block.type !== 'upload') return false
+				const fileType = String(block.data?.file_type || '').toLowerCase()
+				const fileUrl = String(
+					block.data?.file?.url || block.data?.file?.name || ''
+				).toLowerCase()
+				return (
+					VIDEO_FILE_TYPES.includes(fileType) ||
+					VIDEO_FILE_TYPES.some((extension) =>
+						fileUrl.endsWith(`.${extension}`)
+					)
+				)
+			})
 		} catch {
 			return false
 		}

@@ -45,6 +45,8 @@ class CourseLesson(Document):
 	def validate(self):
 		self.content = sanitize_editorjs(self.content)
 		self.instructor_content = sanitize_editorjs(self.instructor_content)
+		if has_video_content(self):
+			self.completion_mode = "Automatic"
 
 	def on_update(self):
 		self.validate_quiz_id()
@@ -91,6 +93,30 @@ class CourseLesson(Document):
 						"lesson": self.name,
 					},
 				)
+
+
+VIDEO_FILE_TYPES = {"mp4", "webm", "mov", "mkv", "m4v"}
+
+
+def has_video_content(lesson) -> bool:
+	"""Keep video lessons on automatic completion, regardless of write path."""
+	body = getattr(lesson, "body", None) or ""
+	if getattr(lesson, "youtube", None):
+		return True
+	if "{{ Video(" in body or "{{ YouTubeVideo(" in body:
+		return True
+
+	for block in get_editorjs_blocks(getattr(lesson, "content", None)):
+		if block.get("type") == "embed":
+			return True
+		if block.get("type") == "upload":
+			data = block.get("data") or {}
+			file_type = str(data.get("file_type") or "").lower()
+			file = data.get("file") or {}
+			file_url = str(file.get("url") or file.get("name") or "").lower()
+			if file_type in VIDEO_FILE_TYPES or file_url.rsplit(".", 1)[-1] in VIDEO_FILE_TYPES:
+				return True
+	return False
 
 
 def cleanup_lesson_backreferences(lesson: str):
