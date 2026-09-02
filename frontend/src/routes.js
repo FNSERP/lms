@@ -34,6 +34,18 @@ export const routes = [
 		],
 	},
 	{
+		path: '/ca-courses',
+		name: 'CACourses',
+		component: () => import('@/pages/Courses/Courses.vue'),
+		children: [
+			{
+				path: 'new',
+				name: 'NewCACourse',
+				component: () => import('@/pages/Forms/NewCourseForm.vue'),
+			},
+		],
+	},
+	{
 		path: '/courses/:courseName',
 		name: 'CourseDetail',
 		component: () => import('@/pages/Courses/CourseDetail.vue'),

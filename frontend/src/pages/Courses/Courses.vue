@@ -98,7 +98,7 @@ import { computed, inject, onMounted, ref, watch } from 'vue'
 import { sessionStore } from '@/stores/session'
 import { canCreateCourse } from '@/utils'
 import CourseCard from '@/components/CourseCard.vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { openFormRoute } from '@/composables/useFormRoute'
 
 const user = inject('$user')
@@ -116,6 +116,10 @@ const filters = ref({})
 const currentTab = ref('live')
 const { brand } = sessionStore()
 const router = useRouter()
+const route = useRoute()
+const isCACourses = computed(
+	() => route.name === 'CACourses' || route.name === 'NewCACourse',
+)
 
 onMounted(() => {
 	setFiltersFromQuery()
@@ -215,12 +219,19 @@ const updateCourses = () => {
 }
 
 const updateFilters = () => {
+	updateBoardFilter()
 	updateCategoryFilter()
 	updateTitleFilter()
 	updateCertificationFilter()
 	updateTabFilter()
 	updateStudentFilter()
 	setQueryParams()
+}
+
+const updateBoardFilter = () => {
+	filters.value.custom_course_board = isCACourses.value
+		? 'CA Courses'
+		: 'Courses'
 }
 
 const updateCategoryFilter = () => {
@@ -351,7 +362,9 @@ const courseMenu = computed(() => {
 			onClick() {
 				// openFormRoute, not a bare router.push: it stamps the history
 				// entry so the form's own close() pops it instead of replacing.
-				openFormRoute(router, { name: 'NewCourse' })
+				openFormRoute(router, {
+					name: isCACourses.value ? 'NewCACourse' : 'NewCourse',
+				})
 			},
 		},
 		{
@@ -376,14 +389,14 @@ const courseMenu = computed(() => {
 
 const breadcrumbs = computed(() => [
 	{
-		label: __('Courses'),
-		route: { name: 'Courses' },
+		label: isCACourses.value ? __('CA Courses') : __('Courses'),
+		route: { name: isCACourses.value ? 'CACourses' : 'Courses' },
 	},
 ])
 
 usePageMeta(() => {
 	return {
-		title: __('Courses'),
+		title: isCACourses.value ? __('CA Courses') : __('Courses'),
 		icon: brand.favicon,
 	}
 })

@@ -127,6 +127,7 @@ import {
 } from 'frappe-ui'
 import { useOnboarding, useTelemetry } from 'frappe-ui/frappe'
 import { computed, inject, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import FormShell from '@/components/FormShell.vue'
 import HeaderButton from '@/components/HeaderButton.vue'
 import { useFormRoute } from '@/composables/useFormRoute'
@@ -161,7 +162,10 @@ const user = inject<any>('$user')
 const courseCreated = ref(false)
 const showMemberModal = ref<boolean>(false)
 
-const { close, saveAndReplace } = useFormRoute({ name: 'Courses' })
+const route = useRoute()
+const isCACourse = route.name === 'NewCACourse'
+const courseListRoute = { name: isCACourse ? 'CACourses' : 'Courses' }
+const { close, saveAndReplace } = useFormRoute(courseListRoute)
 
 // Its own list resource, but the cache key is deliberately byte-identical to
 // Courses.vue:152. createListResource hands back whichever instance was cached
@@ -198,6 +202,7 @@ type Course = {
 	instructors: string[]
 	category?: string
 	image?: string
+	custom_course_board: 'Courses' | 'CA Courses'
 }
 
 const course = ref<Course>({
@@ -207,6 +212,7 @@ const course = ref<Course>({
 	instructors: [],
 	category: undefined,
 	image: undefined,
+	custom_course_board: isCACourse ? 'CA Courses' : 'Courses',
 })
 
 const INSTRUCTOR_ROLES = ['Course Creator', 'Batch Evaluator']

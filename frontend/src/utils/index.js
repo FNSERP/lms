@@ -532,6 +532,12 @@ const getSidebarItems = (forMobile = false) => {
 					activeFor: ['Courses', 'CourseDetail', 'Lesson'],
 				},
 				{
+					label: 'CA Courses',
+					icon: 'BookOpen',
+					to: 'CACourses',
+					activeFor: ['CACourses', 'NewCACourse'],
+				},
+				{
 					label: 'Programs',
 					icon: 'Route',
 					to: 'Programs',
